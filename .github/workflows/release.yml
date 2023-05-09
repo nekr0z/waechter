@@ -11,7 +11,6 @@ jobs:
     env:
       GOPROXY: direct
     steps:
-      - name: install packages
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
