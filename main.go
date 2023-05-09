@@ -103,6 +103,7 @@ func (w watcher) watch(changesStmt, commandsStmt *sql.Stmt) (chan struct{}, erro
 	// this ensures that only one command sequence is queued and run after the
 	// already running one completes
 	runCh := make(chan struct{}, 1)
+	exitCh := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	go execute(runCh, ctx, w.Commands, commandsStmt, w.LogFile)
 
@@ -112,11 +113,12 @@ func (w watcher) watch(changesStmt, commandsStmt *sql.Stmt) (chan struct{}, erro
 
 		run = func(e event) {
 			logEvent(e, changesStmt)
-			// log.Printf("got event: %s - %s", e.path, e.kind.String())
 			mu.Lock()
 			delete(timers, e.path)
 			mu.Unlock()
 			select {
+			case <-exitCh:
+				close(runCh)
 			case runCh <- struct{}{}:
 			default:
 			}
@@ -152,7 +154,9 @@ func (w watcher) watch(changesStmt, commandsStmt *sql.Stmt) (chan struct{}, erro
 				t.Reset(cooldownTime)
 			case <-ch:
 				cancel()
-				close(runCh)
+				close(exitCh)
+				<-runCh
+				<-runCh
 				return
 			}
 		}
