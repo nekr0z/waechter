@@ -400,7 +400,7 @@ func setupSignalHandling(done chan<- struct{}, channels []chan<- struct{}) {
 }
 
 func main() {
-	fmt.Printf("Waechter version %s", version)
+	fmt.Printf("Waechter version %s\n", version)
 
 	if len(os.Args) != 2 {
 		fmt.Println("Mandatory config file name not provided.")
