@@ -86,15 +86,17 @@ func TestWatcherQueuing(t *testing.T) {
 	assertLog(t, log, "done\ndone\n")
 }
 
-func TestWatcherInclude(t *testing.T) {
+func TestWatcherIncludeExclude(t *testing.T) {
 	t.Parallel()
 
 	include := []*regexp.Regexp{regexp.MustCompile(`.*\.go$`)}
+	exclude := []*regexp.Regexp{regexp.MustCompile(`.+_test\.go$`)}
 
-	watchDir, prep, mock := watchChanges(t, include, nil)
+	watchDir, prep, mock := watchChanges(t, include, exclude)
 
 	fn1 := "file.txt"
 	fn2 := "file.go"
+	fn3 := "file_test.go"
 
 	fp2 := filepath.Join(watchDir, fn2)
 
@@ -104,6 +106,9 @@ func TestWatcherInclude(t *testing.T) {
 	time.Sleep(time.Second)
 
 	writeFile(t, watchDir, fn2)
+	time.Sleep(time.Second)
+
+	writeFile(t, watchDir, fn3)
 	time.Sleep(time.Second)
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -131,9 +136,9 @@ func watchChanges(t *testing.T, include, exclude []*regexp.Regexp) (watchDir str
 	}
 
 	w := &watcher{
-		Path:      watchDir,
-		IncludeRe: include,
-		ExcludeRe: exclude,
+		path:      watchDir,
+		includeRe: include,
+		excludeRe: exclude,
 	}
 
 	ch, err := w.watch(stmt, nil)
@@ -150,9 +155,9 @@ func setupWatcher(t *testing.T, commands []string, include []*regexp.Regexp, exc
 	logFile = filepath.Join(logDir, "log")
 	watchingDir = t.TempDir()
 	w := &watcher{
-		Path:     watchingDir,
-		Commands: commands,
-		LogFile:  logFile,
+		path:     watchingDir,
+		commands: commands,
+		logFile:  logFile,
 	}
 
 	var err error
@@ -197,21 +202,25 @@ func TestReadConfig(t *testing.T) {
 	}
 
 	want := "/home/user/project1"
-	if ww[0].Path != want {
-		t.Errorf("path doesn't match: want %s, got %s", want, ww[0].Path)
+	if ww[0].path != want {
+		t.Errorf("path doesn't match: want %s, got %s", want, ww[0].path)
 	}
 
 	want = "go build -o ./build/bin/app1 cmd/service/main.go"
-	if ww[0].Commands[0] != want {
-		t.Errorf("first command want: %s, got %s", want, ww[0].Commands[0])
+	if ww[0].commands[0] != want {
+		t.Errorf("first command want: %s, got %s", want, ww[0].commands[0])
 	}
 
-	if len(ww[0].IncludeRe) != 2 {
-		t.Errorf("want 2 includes, got %d", len(ww[0].IncludeRe))
+	if len(ww[0].includeRe) != 2 {
+		t.Errorf("want 2 includes, got %d", len(ww[0].includeRe))
+	}
+
+	if len(ww[0].excludeRe) != 1 {
+		t.Errorf("want 1 exclude, got %d", len(ww[0].excludeRe))
 	}
 
 	want = "/home/user/project1_build_log.out"
-	got := ww[0].LogFile
+	got := ww[0].logFile
 	if got != want {
 		t.Errorf("want %s, got %s", want, got)
 	}
@@ -283,47 +292,25 @@ func TestLogCommand(t *testing.T) {
 
 func TestLogChanges(t *testing.T) {
 	t.Parallel()
-	changesTable := "Changes"
-	watchDir := t.TempDir()
+
+	watchDir, prep, mock := watchChanges(t, nil, nil)
 	filename := filepath.Join(watchDir, "newfile")
 
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	prep.ExpectExec().WithArgs(filename, "create", AnyTime{}).WillReturnResult(sqlmock.NewResult(1, 1))
 
-	prep := fmt.Sprintf("INSERT INTO %s\\(path, event, occured_at\\) VALUES \\(\\$1, \\$2, \\$3\\)", changesTable)
-
-	pr := mock.ExpectPrepare(prep)
-	pr.ExpectExec().WithArgs(filename, "create", AnyTime{}).WillReturnResult(sqlmock.NewResult(1, 1))
-
-	stmt, err := prepareChangesStmt(db, changesTable)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	w := &watcher{
-		Path: watchDir,
-	}
-
-	ch, err := w.watch(stmt, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	data := []byte("hello world")
-	newFile := filename
-	err = os.WriteFile(newFile, data, 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, watchDir, "newfile")
 
 	time.Sleep(time.Second)
-	close(ch)
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestParseRegexps(t *testing.T) {
+	res := parseRegexps([]string{`\K`})
+	if len(res) != 0 {
+		t.Fatal("parsed an invalid regexp")
 	}
 }
 

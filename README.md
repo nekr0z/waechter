@@ -36,6 +36,8 @@ Waechter is configured by means of a [YAML](https://yaml.org/) file containing u
   include_regexp:
     - .*\.go$
     - .*\.env$
+  exclude_regexp:
+    - .+_test\.go$
   log_file: /home/user/project1_build_log.out
 - path: ./testdata
   commands:
@@ -46,7 +48,9 @@ Each directory must have a valid `path` (either absolute or relative, but be car
 
 The optional `log_file` parameter indicates the file to store the output of the executed commands (combined `stdout` and `stderr`). If no `log_file` is provided, the output is redirected to `stdout` of Waechter. `log_file` is always appended, so make sure to rotate logs as applicable.
 
-The optional `include_regexp` is a list of regular expressions that filenames can be matched against. If the list is not empty, only changes in the files with names matching a regular expression from the list will be registered.
+The optional `include_regexp` is a list of regular expressions that filenames can be matched against. If the list is not empty, only changes in the files with names matching a regular expression from the list will be registered. Invalid expressions (such as `\K`, for example) get dropped, so the list may end up empty and no files will be ignored.
+
+In the same way, the optional `exclude_regexp` is a list of regular expressions that gets the matching filenames to be ignored when wathching for changes. If a filename matches both and `include_regexp` and an `exclude_regexp`, the file is ignored.
 
 The optional second YAML document in the config file sets the database configuration:
 
@@ -99,6 +103,7 @@ The current directory will be watched, and you can create, modify and delete fil
 - Waechter uses `inotify` to detect changes; the [usual issues](https://unix.stackexchange.com/questions/13751/kernel-inotify-watch-limit-reached) apply, so you may want to tweak your system accordingly;
 - there's a 100 ms timer that is started whenever a change is detected; if a change occurs _on the same file_ before this timer expires, it is reset for another 100 ms; only after the file expires are the commands executed; this behaviour guards against the situations when a file is written to continuously in small chunks (such as when a Go binary is compiled), and it makes sense to wait for the whole write to finish before triggering the commands execution;
 - if a set of commands is already running when a new change is detected, a new run is queued and will be performed as soon as the current run is finished; at most one "next" run will be queued, and the commands will not be executed concurrently; however, each path is watched separately, so whenever paths overlap (or several Waechter instances are run simultaneously), a single change can trigger concurrent commands execution;
+- regular expressions in `include_regexp` and `exclude_regexp` are matched against the path (relative or absolute, depending on how the `path` is defined), not just the name of the file;
 - upon exiting (when `SIGTERM` is received) Waechter sends a `SIGKILL` to all the running commands;
 - Waechter should work on any system it compiles on, but has only been tested in Linux.
 

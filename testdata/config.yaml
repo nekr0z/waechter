@@ -5,6 +5,8 @@
   include_regexp:
     - .*\.go$
     - .*\.env$
+  exclude_regexp:
+    - .+_test\.go$
   log_file: /home/user/project1_build_log.out
 - path: ./
   commands:

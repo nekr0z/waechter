@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - `include_regexp` parameter
+- `exclude_regexp` parameter
 
 ## [0.1.0] - 2023-05-09
 *initial release*

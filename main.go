@@ -46,11 +46,11 @@ var (
 
 // watcher watches the directory recursively and fires the commands.
 type watcher struct {
-	Path      string // dir to watch
-	Commands  []string
-	LogFile   string // if empty, use stdout
-	IncludeRe []*regexp.Regexp
-	ExcludeRe []*regexp.Regexp
+	path      string // dir to watch
+	commands  []string
+	logFile   string // if empty, use stdout
+	includeRe []*regexp.Regexp
+	excludeRe []*regexp.Regexp
 }
 
 type watcherConfig struct {
@@ -108,7 +108,7 @@ func (w watcher) watch(changesStmt, commandsStmt *sql.Stmt) (chan struct{}, erro
 		return nil
 	}
 
-	if err := filepath.Walk(w.Path, adder); err != nil {
+	if err := filepath.Walk(w.path, adder); err != nil {
 		fw.Close()
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func (w watcher) watch(changesStmt, commandsStmt *sql.Stmt) (chan struct{}, erro
 	runCh := make(chan struct{}, 1)
 	exitCh := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
-	go execute(runCh, ctx, w.Commands, commandsStmt, w.LogFile)
+	go execute(runCh, ctx, w.commands, commandsStmt, w.logFile)
 
 	var (
 		mu     sync.Mutex
@@ -146,7 +146,10 @@ func (w watcher) watch(changesStmt, commandsStmt *sql.Stmt) (chan struct{}, erro
 			select {
 			case ev := <-fw.Events:
 				e := parseEvent(ev)
-				if len(w.IncludeRe) != 0 && !haveMatch(w.IncludeRe, e.path) {
+				if len(w.includeRe) != 0 && !haveMatch(w.includeRe, e.path) {
+					continue
+				}
+				if haveMatch(w.excludeRe, e.path) {
 					continue
 				}
 				if e.kind == chmod { // makes sense to ignore
@@ -280,7 +283,8 @@ func decodeConfigs(confs []watcherConfig) []watcher {
 
 func decodeConfig(conf watcherConfig) watcher {
 	include := parseRegexps(conf.IncludeRe)
-	return watcher{Path: conf.Path, Commands: conf.Commands, LogFile: conf.LogFile, IncludeRe: include}
+	exclude := parseRegexps(conf.ExcludeRe)
+	return watcher{path: conf.Path, commands: conf.Commands, logFile: conf.LogFile, includeRe: include, excludeRe: exclude}
 }
 
 func parseRegexps(ss []string) []*regexp.Regexp {
@@ -468,7 +472,7 @@ func main() {
 	for _, w := range watchers {
 		ch, err := w.watch(changesStmt, commandsStmt)
 		if err != nil {
-			log.Printf("couldn't begin watching %s: %s", w.Path, err)
+			log.Printf("couldn't begin watching %s: %s", w.path, err)
 		} else {
 			running = append(running, ch)
 		}
