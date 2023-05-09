@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+//go:generate go run version_generate.go
+
 package main
 
 import (
@@ -37,6 +39,8 @@ import (
 
 var (
 	cooldownTime = time.Millisecond * 100
+
+	version string = "custom"
 )
 
 // watcher watches the directory recursively and fires the commands.
@@ -396,6 +400,8 @@ func setupSignalHandling(done chan<- struct{}, channels []chan<- struct{}) {
 }
 
 func main() {
+	fmt.Printf("Waechter version %s", version)
+
 	if len(os.Args) != 2 {
 		fmt.Println("Mandatory config file name not provided.")
 		os.Exit(1)
