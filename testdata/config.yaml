@@ -1,0 +1,16 @@
+- path: /home/user/project1
+  commands:
+    - go build -o ./build/bin/app1 cmd/service/main.go
+    - go run ./build/bin/app1
+
+  log_file: /home/user/project1_build_log.out
+- path: ./
+  commands:
+    - echo change detected
+    - sleep 5
+    - echo all commands executed
+---
+type: postgres
+location: postgres://postgres:example@localhost:5432/postgres
+changes: changes
+commands: exec

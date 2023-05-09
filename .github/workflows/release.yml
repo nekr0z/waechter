@@ -1,0 +1,58 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GOPROXY: direct
+    steps:
+      - name: install packages
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+
+      - name: install changelog
+        run: |
+          go install evgenykuznetsov.org/go/changelog/cmd/changelog@latest
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.7
+          bundler-cache: true
+
+      - name: install fpm
+        run: gem install fpm
+
+      - name: build packages
+        run: |
+          git fetch --tags --force
+          mkdir release
+          changelog -n "Evgeny Kuznetsov" -e "evgeny@kuznetsov.md" -p "waechter" CHANGELOG.md
+          bash <(VER=$(go generate); for ARCH in amd64 386 arm arm64; do GOARCH=$ARCH CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -buildid= -X main.version=$VER"; tar -czf release/waechter-$VER-linux-$ARCH.tar.gz waechter LICENSE README.md CHANGELOG.md SOURCE.txt; fpm -t deb -s dir -a $ARCH -n waechter -v ${VER%+*} -m "Evgeny Kuznetsov <evgeny@kuznetsov.md>" --deb-changelog debian.changelog --license GPL-3 --deb-priority optional --url https://evgenykuznetsov.org/go/waechter --vendor "Evgeny Kuznetsov <evgeny@kuznetsov.md>" --description "A CLI app to watch directories for changes and run chains of commands upon detecting a change." LICENSE=/usr/share/doc/waechter/ README.md=/usr/share/doc/waechter/ SOURCE.txt=/usr/share/doc/waechter waechter=/usr/bin/ >/dev/null; mv *.deb release/; done)
+          cd release
+          fpm -s deb -t deb -a i386 *386.deb
+          rm *_386.deb
+          fpm -s deb -t deb -a armel *arm.deb
+          rm *arm.deb
+      - name: release
+        uses: marvinpinto/action-automatic-releases@v1.2.1
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: false
+          files: "release/*"
+
+      - name: trigger repository update
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: waechter

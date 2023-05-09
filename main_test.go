@@ -1,0 +1,284 @@
+// Copyright (C) 2023 Evgeny Kuznetsov (evgeny@kuznetsov.md)
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+package main
+
+import (
+	"bytes"
+	"context"
+	"database/sql/driver"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+)
+
+func TestWatcher(t *testing.T) {
+	t.Parallel()
+	want := "it works!"
+	commands := []string{"echo " + want}
+	ch, watchDir, log := setupWatcher(t, commands)
+
+	writeFile(t, watchDir, "newfile")
+	time.Sleep(time.Second)
+	assertLog(t, log, want+"\n")
+
+	writeFile(t, watchDir, "anotherfile")
+	time.Sleep(time.Second)
+
+	close(ch)
+
+	assertLog(t, log, want+"\n"+want+"\n")
+}
+
+func TestStopWatcher(t *testing.T) {
+	t.Parallel()
+	commands := []string{
+		"sleep 1",
+		"echo done",
+	}
+	ch, watchDir, log := setupWatcher(t, commands)
+
+	writeFile(t, watchDir, "file1")
+	time.Sleep(time.Second)
+	writeFile(t, watchDir, "file2") // this one will have no time to finish
+
+	time.Sleep(time.Second)
+	close(ch)
+
+	time.Sleep(time.Second)
+
+	assertLog(t, log, "done\n")
+}
+
+func TestWatcherQueuing(t *testing.T) {
+	t.Parallel()
+	commands := []string{
+		"sleep 2",
+		"echo done",
+	}
+	_, watchDir, log := setupWatcher(t, commands)
+
+	writeFile(t, watchDir, "file1")
+	time.Sleep(time.Second)
+	writeFile(t, watchDir, "file2")
+	time.Sleep(time.Second)
+	writeFile(t, watchDir, "file1") // this one should not trigger a run, since a run is already queued
+	time.Sleep(time.Second * 5)
+
+	assertLog(t, log, "done\ndone\n")
+}
+
+func setupWatcher(t *testing.T, commands []string) (ch chan struct{}, watchingDir string, logFile string) {
+	t.Helper()
+	logDir := t.TempDir()
+	logFile = filepath.Join(logDir, "log")
+	watchingDir = t.TempDir()
+	w := &watcher{
+		Path:     watchingDir,
+		Commands: commands,
+		LogFile:  logFile,
+	}
+
+	var err error
+	ch, err = w.watch(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return
+}
+
+func writeFile(t *testing.T, dir string, filename string) {
+	t.Helper()
+	data := []byte("hello world")
+	newFile := filepath.Join(dir, filename)
+	err := os.WriteFile(newFile, data, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertLog(t *testing.T, logFile string, want string) {
+	t.Helper()
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if got != want {
+		t.Fatalf("want:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestReadConfig(t *testing.T) {
+	t.Parallel()
+	configFile := filepath.Join("testdata", "config.yaml")
+	ww, dbConfig, err := readConfig(configFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ww) != 2 {
+		t.Fatalf("want len 1, got %v", len(ww))
+	}
+
+	want := "/home/user/project1"
+	if ww[0].Path != want {
+		t.Errorf("path doesn't match: want %s, got %s", want, ww[0].Path)
+	}
+
+	want = "go build -o ./build/bin/app1 cmd/service/main.go"
+	if ww[0].Commands[0] != want {
+		t.Errorf("first command want: %s, got %s", want, ww[0].Commands[0])
+	}
+
+	want = "/home/user/project1_build_log.out"
+	got := ww[0].LogFile
+	if got != want {
+		t.Errorf("want %s, got %s", want, got)
+	}
+
+	want = "postgres://postgres:example@localhost:5432/postgres"
+	got = dbConfig.Connection
+	if got != want {
+		t.Errorf("want %s, got %s", want, got)
+	}
+}
+
+func TestMultipleCommands(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		commands []string
+		want     string
+	}{
+		"normal run": {
+			[]string{"echo hello world", "echo goodbye void"},
+			"hello world\ngoodbye void\n",
+		},
+		"failing command": {
+			[]string{"echo hello world", "exit 1", "echo goodbye world"},
+			"hello world\n",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var output bytes.Buffer
+			runCommands(context.Background(), &output, tc.commands, nil)
+			got := output.String()
+			if tc.want != got {
+				t.Fatalf("want:\n%s\ngot:\n%s\n", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestLogCommand(t *testing.T) {
+	t.Parallel()
+	commandsTable := "Exec"
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	prep := fmt.Sprintf("INSERT INTO %s\\(command, run_at\\) VALUES \\(\\$1, \\$2\\)", commandsTable)
+
+	pr := mock.ExpectPrepare(prep)
+
+	stmt, err := prepareCommandsStmt(db, commandsTable)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	commands := []string{"echo hello world", "echo goodbye void"}
+	for i, cmd := range commands {
+		pr.ExpectExec().WithArgs(EndString(cmd), AnyTime{}).WillReturnResult(sqlmock.NewResult(int64(i+1), 1))
+	}
+
+	runAndLogCommands(context.Background(), commands, stmt, "")
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestLogChanges(t *testing.T) {
+	t.Parallel()
+	changesTable := "Changes"
+	watchDir := t.TempDir()
+	filename := filepath.Join(watchDir, "newfile")
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	prep := fmt.Sprintf("INSERT INTO %s\\(path, event, occured_at\\) VALUES \\(\\$1, \\$2, \\$3\\)", changesTable)
+
+	pr := mock.ExpectPrepare(prep)
+	pr.ExpectExec().WithArgs(filename, "create", AnyTime{}).WillReturnResult(sqlmock.NewResult(1, 1))
+
+	stmt, err := prepareChangesStmt(db, changesTable)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := &watcher{
+		Path: watchDir,
+	}
+
+	ch, err := w.watch(stmt, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data := []byte("hello world")
+	newFile := filename
+	err = os.WriteFile(newFile, data, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(time.Second)
+	close(ch)
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Error(err)
+	}
+}
+
+type AnyTime struct{}
+
+// Match satisfies sqlmock.Argument interface
+func (a AnyTime) Match(v driver.Value) bool {
+	_, ok := v.(time.Time)
+	return ok
+}
+
+type EndString string
+
+// Match satisfies sqlmock.Argument interface
+func (e EndString) Match(v driver.Value) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	return strings.HasSuffix(s, string(e))
+}
