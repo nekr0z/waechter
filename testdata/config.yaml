@@ -2,7 +2,9 @@
   commands:
     - go build -o ./build/bin/app1 cmd/service/main.go
     - go run ./build/bin/app1
-
+  include_regexp:
+    - .*\.go$
+    - .*\.env$
   log_file: /home/user/project1_build_log.out
 - path: ./
   commands:

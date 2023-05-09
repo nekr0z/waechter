@@ -27,6 +27,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -45,9 +46,19 @@ var (
 
 // watcher watches the directory recursively and fires the commands.
 type watcher struct {
-	Path     string // dir to watch
-	Commands []string
-	LogFile  string `yaml:"log_file,omitempty"` // if empty, use stdout
+	Path      string // dir to watch
+	Commands  []string
+	LogFile   string // if empty, use stdout
+	IncludeRe []*regexp.Regexp
+	ExcludeRe []*regexp.Regexp
+}
+
+type watcherConfig struct {
+	Path      string // dir to watch
+	Commands  []string
+	LogFile   string   `yaml:"log_file,omitempty"`
+	IncludeRe []string `yaml:"include_regexp,omitempty"`
+	ExcludeRe []string `yaml:"exclude_regexp,omitempty"`
 }
 
 // dbConfig holds data required to store the events and commands logs
@@ -135,6 +146,9 @@ func (w watcher) watch(changesStmt, commandsStmt *sql.Stmt) (chan struct{}, erro
 			select {
 			case ev := <-fw.Events:
 				e := parseEvent(ev)
+				if len(w.IncludeRe) != 0 && !haveMatch(w.IncludeRe, e.path) {
+					continue
+				}
 				if e.kind == chmod { // makes sense to ignore
 					continue
 				}
@@ -240,8 +254,8 @@ func readConfig(filename string) ([]watcher, *dbConfig, error) {
 	}
 
 	dec := yaml.NewDecoder(f)
-	var out []watcher
-	err = dec.Decode(&out)
+	var conf []watcherConfig
+	err = dec.Decode(&conf)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not parse watcher config: %w", err)
 	}
@@ -251,7 +265,43 @@ func readConfig(filename string) ([]watcher, *dbConfig, error) {
 	if err != nil {
 		err = fmt.Errorf("could not parse DB config: %w", err)
 	}
+
+	out := decodeConfigs(conf)
 	return out, &db, err
+}
+
+func decodeConfigs(confs []watcherConfig) []watcher {
+	var out []watcher
+	for _, conf := range confs {
+		out = append(out, decodeConfig(conf))
+	}
+	return out
+}
+
+func decodeConfig(conf watcherConfig) watcher {
+	include := parseRegexps(conf.IncludeRe)
+	return watcher{Path: conf.Path, Commands: conf.Commands, LogFile: conf.LogFile, IncludeRe: include}
+}
+
+func parseRegexps(ss []string) []*regexp.Regexp {
+	var out []*regexp.Regexp
+	for _, s := range ss {
+		if re, err := regexp.Compile(s); err == nil {
+			out = append(out, re)
+		} else {
+			log.Printf("%s can not be parsed into a valid regexp", s)
+		}
+	}
+	return out
+}
+
+func haveMatch(res []*regexp.Regexp, path string) bool {
+	for _, re := range res {
+		if re.MatchString(path) {
+			return true
+		}
+	}
+	return false
 }
 
 func initDB(conf *dbConfig) (changesStmt, commandsStmt *sql.Stmt) {

@@ -33,15 +33,20 @@ Waechter is configured by means of a [YAML](https://yaml.org/) file containing u
   commands:
     - go build -o ./build/bin/app1 cmd/service/main.go
     - go run ./build/bin/app1
+  include_regexp:
+    - .*\.go$
+    - .*\.env$
   log_file: /home/user/project1_build_log.out
 - path: ./testdata
   commands:
     - echo change detected
 ```
 
-Each directory must have a valid path (either absolute or relative, but be careful with relative paths as those are resolved relative to the working directory at the time Waechter is run) and a list of commands to run. Note that the commands will be run directly, without spawning a shell, so if you need to do some shell scripting or piping, you'll need to wrap your commands in shell scripts as applicable.
+Each directory must have a valid `path` (either absolute or relative, but be careful with relative paths as those are resolved relative to the working directory at the time Waechter is run) and a list of `commands` to run. Note that the commands will be run directly, without spawning a shell, so if you need to do some shell scripting or piping, you'll need to wrap your commands in shell scripts as applicable.
 
 The optional `log_file` parameter indicates the file to store the output of the executed commands (combined `stdout` and `stderr`). If no `log_file` is provided, the output is redirected to `stdout` of Waechter. `log_file` is always appended, so make sure to rotate logs as applicable.
+
+The optional `include_regexp` is a list of regular expressions that filenames can be matched against. If the list is not empty, only changes in the files with names matching a regular expression from the list will be registered.
 
 The optional second YAML document in the config file sets the database configuration:
 
