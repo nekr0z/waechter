@@ -3,7 +3,7 @@ on: [push]
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     env:
       GOPROXY: direct
     steps:
@@ -27,5 +27,4 @@ jobs:
             ${{ runner.os }}-
       - name: build
         run: |
-          VER=$(go run version_generate.go)
-          go build -buildmode=pie -trimpath -ldflags "-s -w -buildid= -X main.version=$VER"
+          bash <(VER=$(go generate); for ARCH in amd64 386 arm arm64; do GOARCH=$ARCH CGO_ENABLED=0 go build -ldflags "-s -w -buildid= -X main.version=$VER"; done)
