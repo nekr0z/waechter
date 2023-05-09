@@ -17,7 +17,7 @@ A CLI app to watch directories for changes and run chains of commands upon detec
 The app requires no installation as such. If Go and Docker are installed in the system, you may [give Waechter a test run](#testing-with-a-sample-configuration) right away.
 
 ### Compiling
-You can always download precompiled amd64 binary from the [releases page](https://github.com/nekr0z/waechter/releases), but it's also perfectly OK to compile Waechter yourself. Provided that you have Go installed, all you need to do is:
+You can always download a precompiled binary from the [releases page](https://github.com/nekr0z/waechter/releases), but it's also perfectly OK to compile Waechter yourself. Provided that you have Go installed, all you need to do is:
 
     $ git clone https://github.com/nekr0z/waechter.git
     $ cd waechter
@@ -58,10 +58,8 @@ The schema used for both tables can be found [here](postgres/init/create_tables.
 
 An example PostgreSQL installation is provided by means of a [Docker Compose](https://docs.docker.com/compose/) file. To run it, have Docker and Docker Compose installed, and from the cloned repository do:
 
-```
-$ cd postrges
-$ sudo docker compose up
-```
+    $ cd postrges
+    $ sudo docker compose up
 
 This will configure and run a PostgreSQL setup that corresponds to the configuration [in the example config file](testdata/config.yaml). The Adminer interface will be exposed at localhost:8080 where you can use `PostgreSQL` driver, `postgres` user with `example` password to access the `postgres` database and access the recorded entries.
 
@@ -69,29 +67,23 @@ This will configure and run a PostgreSQL setup that corresponds to the configura
 
 Run Waechter with
 
-```
-$ waechter /path/to/config.yaml
-```
+    $ waechter /path/to/config.yaml
 
 (compiled version), or
 
-```
-$ go run main.go /path/to/config.yaml
-```
+    $ go run main.go /path/to/config.yaml
 
 ### Testing with a sample configuration
 
 To test with the provided sample configuration, you may use the PostgreSQL Docker Compose setup (as explained above):
 
-```
-$ git clone https://github.com/nekr0z/waechter.git
-$ cd waechter
-$ go build
-$ cd postgres
-$ sudo docker compose up -d
-$ cd ..
-$ waechter testdata/config.yaml
-```
+    $ git clone https://github.com/nekr0z/waechter.git
+    $ cd waechter
+    $ go build
+    $ cd postgres
+    $ sudo docker compose up -d
+    $ cd ..
+    $ waechter testdata/config.yaml
 
 The current directory will be watched, and you can create, modify and delete files to trigger the commands. Issue a `SIGTERM` (by hitting `Ctrl+C`) to stop Waechter.
 
@@ -102,7 +94,8 @@ The current directory will be watched, and you can create, modify and delete fil
 - Waechter uses `inotify` to detect changes; the [usual issues](https://unix.stackexchange.com/questions/13751/kernel-inotify-watch-limit-reached) apply, so you may want to tweak your system accordingly;
 - there's a 100 ms timer that is started whenever a change is detected; if a change occurs _on the same file_ before this timer expires, it is reset for another 100 ms; only after the file expires are the commands executed; this behaviour guards against the situations when a file is written to continuously in small chunks (such as when a Go binary is compiled), and it makes sense to wait for the whole write to finish before triggering the commands execution;
 - if a set of commands is already running when a new change is detected, a new run is queued and will be performed as soon as the current run is finished; at most one "next" run will be queued, and the commands will not be executed concurrently; however, each path is watched separately, so whenever paths overlap (or several Waechter instances are run simultaneously), a single change can trigger concurrent commands execution;
-- upon exiting (when `SIGTERM` is received) Waechter sends a `SIGKILL` to all the running commands.
+- upon exiting (when `SIGTERM` is received) Waechter sends a `SIGKILL` to all the running commands;
+- Waechter should work on any system it compiles on, but has only been tested in Linux.
 
 ## Development
 Pull requests are always welcome!
@@ -111,5 +104,7 @@ Pull requests are always welcome!
 This software depends upon (and incorporates when compiled) the following software or parts thereof:
 * [fsnotify](https://github.com/fsnotify/fsnotify) Copyright © 2012 The Go Authors. Copyright © fsnotify Authors.
 * [go-yaml/yaml](https://gopkg.in/yaml) Copyright (c) 2006-2010 Kirill Simonov. Copyright (c) 2006-2011 Kirill Simonov. Copyright (c) 2011-2019 Canonical Ltd.
+* [jackc/pgx](https://github.com/jackc/pgx) Copyright (c) 2013-2021 Jack Christensen.
+* [The Go Programming Language](https://golang.org) Copyright © 2009 The Go Authors
 
 Packages are built using [fpm](https://github.com/jordansissel/fpm) and [changelog](https://evgenykuznetsov.org/go/changelog).
