@@ -116,80 +116,6 @@ func TestWatcherIncludeExclude(t *testing.T) {
 	}
 }
 
-func watchChanges(t *testing.T, include, exclude []*regexp.Regexp) (watchDir string, pr *sqlmock.ExpectedPrepare, mock sqlmock.Sqlmock) {
-	changesTable := "Changes"
-	watchDir = t.TempDir()
-
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-
-	prep := fmt.Sprintf("INSERT INTO %s\\(path, event, occured_at\\) VALUES \\(\\$1, \\$2, \\$3\\)", changesTable)
-
-	pr = mock.ExpectPrepare(prep)
-
-	stmt, err := prepareChangesStmt(db, changesTable)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	w := &watcher{
-		path:      watchDir,
-		includeRe: include,
-		excludeRe: exclude,
-	}
-
-	ch, err := w.watch(stmt, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { close(ch) })
-	return
-}
-
-func setupWatcher(t *testing.T, commands []string, include []*regexp.Regexp, exclude []*regexp.Regexp) (ch chan struct{}, watchingDir string, logFile string) {
-	t.Helper()
-	logDir := t.TempDir()
-	logFile = filepath.Join(logDir, "log")
-	watchingDir = t.TempDir()
-	w := &watcher{
-		path:     watchingDir,
-		commands: commands,
-		logFile:  logFile,
-	}
-
-	var err error
-	ch, err = w.watch(nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return
-}
-
-func writeFile(t *testing.T, dir string, filename string) {
-	t.Helper()
-	data := []byte("hello world")
-	newFile := filepath.Join(dir, filename)
-	err := os.WriteFile(newFile, data, 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func assertLog(t *testing.T, logFile string, want string) {
-	t.Helper()
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := string(data)
-	if got != want {
-		t.Fatalf("want:\n%s\ngot:\n%s", want, got)
-	}
-}
-
 func TestReadConfig(t *testing.T) {
 	t.Parallel()
 	configFile := filepath.Join("testdata", "config.yaml")
@@ -331,4 +257,78 @@ func (e EndString) Match(v driver.Value) bool {
 		return false
 	}
 	return strings.HasSuffix(s, string(e))
+}
+
+func watchChanges(t *testing.T, include, exclude []*regexp.Regexp) (watchDir string, pr *sqlmock.ExpectedPrepare, mock sqlmock.Sqlmock) {
+	changesTable := "Changes"
+	watchDir = t.TempDir()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	prep := fmt.Sprintf("INSERT INTO %s\\(path, event, occured_at\\) VALUES \\(\\$1, \\$2, \\$3\\)", changesTable)
+
+	pr = mock.ExpectPrepare(prep)
+
+	stmt, err := prepareChangesStmt(db, changesTable)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := &watcher{
+		path:      watchDir,
+		includeRe: include,
+		excludeRe: exclude,
+	}
+
+	ch, err := w.watch(stmt, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { close(ch) })
+	return
+}
+
+func setupWatcher(t *testing.T, commands []string, include []*regexp.Regexp, exclude []*regexp.Regexp) (ch chan struct{}, watchingDir string, logFile string) {
+	t.Helper()
+	logDir := t.TempDir()
+	logFile = filepath.Join(logDir, "log")
+	watchingDir = t.TempDir()
+	w := &watcher{
+		path:     watchingDir,
+		commands: commands,
+		logFile:  logFile,
+	}
+
+	var err error
+	ch, err = w.watch(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return
+}
+
+func writeFile(t *testing.T, dir string, filename string) {
+	t.Helper()
+	data := []byte("hello world")
+	newFile := filepath.Join(dir, filename)
+	err := os.WriteFile(newFile, data, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertLog(t *testing.T, logFile string, want string) {
+	t.Helper()
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if got != want {
+		t.Fatalf("want:\n%s\ngot:\n%s", want, got)
+	}
 }
