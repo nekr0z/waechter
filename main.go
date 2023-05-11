@@ -54,8 +54,8 @@ type watcher struct {
 }
 
 type watcherConfig struct {
-	Path      string // dir to watch
-	Commands  []string
+	Path      string   `yaml:"path"` // dir to watch
+	Commands  []string `yaml:"commands"`
 	LogFile   string   `yaml:"log_file,omitempty"`
 	IncludeRe []string `yaml:"include_regexp,omitempty"`
 	ExcludeRe []string `yaml:"exclude_regexp,omitempty"`
@@ -250,32 +250,35 @@ func logEvent(e event, changesStmt *sql.Stmt) {
 	}
 }
 
-func readConfig(filename string) ([]watcher, *dbConfig, error) {
+func readConfig(filename string) ([]watcher, dbConfig, error) {
 	f, err := os.Open(filename)
+	var db dbConfig
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not open config file: %w", err)
+		return nil, db, fmt.Errorf("could not open config file: %w", err)
 	}
 
 	dec := yaml.NewDecoder(f)
 	var conf []watcherConfig
 	err = dec.Decode(&conf)
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not parse watcher config: %w", err)
+		return nil, db, fmt.Errorf("could not parse watcher config: %w", err)
 	}
 
-	var db dbConfig
 	err = dec.Decode(&db)
 	if err != nil {
 		err = fmt.Errorf("could not parse DB config: %w", err)
 	}
 
 	out := decodeConfigs(conf)
-	return out, &db, err
+	return out, db, err
 }
 
 func decodeConfigs(confs []watcherConfig) []watcher {
 	var out []watcher
 	for _, conf := range confs {
+		if conf.Path == "" || len(conf.Commands) == 0 {
+			continue
+		}
 		out = append(out, decodeConfig(conf))
 	}
 	return out
@@ -308,12 +311,8 @@ func haveMatch(res []*regexp.Regexp, path string) bool {
 	return false
 }
 
-func initDB(conf *dbConfig) (changesStmt, commandsStmt *sql.Stmt) {
+func initDB(conf dbConfig) (changesStmt, commandsStmt *sql.Stmt) {
 	none := "will not store event and command logs"
-	if conf == nil {
-		log.Printf("no database config, %s", none)
-		return
-	}
 	if conf.Kind.String() == "unknown" {
 		log.Printf("database type unknown, %s", none)
 		return

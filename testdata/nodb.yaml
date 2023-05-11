@@ -1,0 +1,9 @@
+- path: something
+  commands:
+    - git diff
+- log_file: /home/user/project1_build_log.out
+  commands:
+    - go build -o ./build/bin/app1 cmd/service/main.go
+    - go run ./build/bin/app1
+- path: /home/user/project1
+  commands:

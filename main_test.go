@@ -158,6 +158,38 @@ func TestReadConfig(t *testing.T) {
 	}
 }
 
+func TestReadConfigErr(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		file string
+		len  int
+		db   bool
+	}{
+		"full":         {"config.yaml", 2, true},
+		"no db":        {"nodb.yaml", 1, false},
+		"invalid":      {"invalid.yaml", 0, false},
+		"invalid db":   {"invaliddb.yaml", 1, false},
+		"missing file": {"nothing.atall", 0, false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			file := filepath.Join("testdata", tc.file)
+			ww, db, err := readConfig(file)
+			if len(ww) != tc.len {
+				t.Errorf("want %d watchers, have %d: %s", tc.len, len(ww), ww)
+			}
+			if db.Kind.String() != "unknown" && !tc.db {
+				t.Errorf("want no database, have %s", db)
+			}
+			if db.Kind.String() == "unknown" && tc.db {
+				t.Errorf("want a DB config, got nil: %s", err)
+			}
+		})
+	}
+}
+
 func TestMultipleCommands(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {
@@ -237,6 +269,35 @@ func TestParseRegexps(t *testing.T) {
 	res := parseRegexps([]string{`\K`})
 	if len(res) != 0 {
 		t.Fatal("parsed an invalid regexp")
+	}
+}
+
+func TestValidateTables(t *testing.T) {
+	t.Parallel()
+
+	a := []string{
+		"some_table",
+		"another_table",
+		"yet_another_table",
+		"you_guessed_it_another_table",
+	}
+	tests := map[string]struct {
+		s1, s2       string
+		want1, want2 bool
+	}{
+		"both":    {"yet_another_TABLE", "Some_Table", true, true},
+		"first":   {"another_table", "that_table", true, false},
+		"second":  {"nonono", "some_table", false, true},
+		"neither": {"oh_no", "no_way", false, false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got1, got2 := validateTables(a, tc.s1, tc.s2)
+			if !(got1 == tc.want1 && got2 == tc.want2) {
+				t.Errorf("want %v-%v, got %v-%v", tc.want1, tc.want2, got1, got2)
+			}
+		})
 	}
 }
 
