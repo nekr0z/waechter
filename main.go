@@ -323,13 +323,19 @@ func initDB(conf dbConfig) (changesStmt, commandsStmt *sql.Stmt) {
 		return
 	}
 
+	return prepareStmts(db, conf.Changes, conf.Commands)
+}
+
+func prepareStmts(db *sql.DB, changesTable, commandsTable string) (changesStmt, commandsStmt *sql.Stmt) {
 	tables := getTableNames(db)
-	changesOk, commandsOk := validateTables(tables, conf.Changes, conf.Commands)
+	changesOk, commandsOk := validateTables(tables, changesTable, commandsTable)
+
+	var err error
 
 	if !changesOk {
 		log.Println("will not store event log: no such table")
 	} else {
-		changesStmt, err = prepareChangesStmt(db, conf.Changes)
+		changesStmt, err = prepareChangesStmt(db, changesTable)
 		if err != nil {
 			log.Printf("will not store event log: %s", err)
 		}
@@ -338,7 +344,7 @@ func initDB(conf dbConfig) (changesStmt, commandsStmt *sql.Stmt) {
 	if !commandsOk {
 		log.Println("will not store command log: no such table")
 	} else {
-		commandsStmt, err = prepareCommandsStmt(db, conf.Commands)
+		commandsStmt, err = prepareCommandsStmt(db, commandsTable)
 		if err != nil {
 			log.Printf("will not store command log: %s", err)
 		}
@@ -350,6 +356,7 @@ func getTableNames(db *sql.DB) []string {
 	var out []string
 	rows, err := db.Query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';")
 	if err != nil {
+		log.Println(err)
 		return out
 	}
 	defer rows.Close()

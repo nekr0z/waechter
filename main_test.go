@@ -301,20 +301,41 @@ func TestValidateTables(t *testing.T) {
 	}
 }
 
-func TestGetTableNames(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
+func TestPrepareStmts(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		changesTable, commandsTable string
+		changes, commands           bool
+	}{
+		"both":          {"table_one", "table_two", true, true},
+		"changes only":  {"table_three", "something", true, false},
+		"commands only": {"other_table", "table_one", false, true},
+		"none":          {"one", "two", false, false},
 	}
-	defer db.Close()
 
-	rows := sqlmock.NewRows([]string{"table_name"}).AddRow("table_one").AddRow("table_two")
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
 
-	mock.ExpectQuery("SELECT").WillReturnRows(rows)
+			rows := sqlmock.NewRows([]string{"table_name"}).AddRow("table_one").AddRow("table_two").AddRow("table_three").AddRow("another_table")
 
-	got := getTableNames(db)
-	if len(got) != 2 || got[0] != "table_one" || got[1] != "table_two" {
-		t.Errorf("got %s", got)
+			mock.ExpectQuery("SELECT").WillReturnRows(rows)
+			mock.ExpectPrepare("")
+			mock.ExpectPrepare("")
+
+			chg, cmd := prepareStmts(db, tc.changesTable, tc.commandsTable)
+			gotChg := chg != nil
+			gotCmd := cmd != nil
+
+			if gotChg != tc.changes || gotCmd != tc.commands {
+				t.Errorf("want %v, %v; got %v, %v", tc.changes, tc.commands, gotChg, gotCmd)
+			}
+		})
 	}
 }
 
