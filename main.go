@@ -224,7 +224,7 @@ func runCommands(ctx context.Context, w io.Writer, cmds []string, commandsStmt *
 		if commandsStmt != nil {
 			_, err := commandsStmt.Exec(c.String(), time.Now().UTC())
 			if err != nil {
-				panic(err)
+				log.Printf("error saving command to database: %s", err)
 			}
 		}
 
@@ -246,7 +246,7 @@ func logEvent(e event, changesStmt *sql.Stmt) {
 	}
 	_, err := changesStmt.Exec(e.path, e.kind.String(), time.Now().UTC())
 	if err != nil {
-		panic(err)
+		log.Printf("error saving detected changes to database: %s", err)
 	}
 }
 
