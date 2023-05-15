@@ -301,6 +301,23 @@ func TestValidateTables(t *testing.T) {
 	}
 }
 
+func TestGetTableNames(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	rows := sqlmock.NewRows([]string{"table_name"}).AddRow("table_one").AddRow("table_two")
+
+	mock.ExpectQuery("SELECT").WillReturnRows(rows)
+
+	got := getTableNames(db)
+	if len(got) != 2 || got[0] != "table_one" || got[1] != "table_two" {
+		t.Errorf("got %s", got)
+	}
+}
+
 type AnyTime struct{}
 
 // Match satisfies sqlmock.Argument interface
