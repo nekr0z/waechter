@@ -339,6 +339,28 @@ func TestPrepareStmts(t *testing.T) {
 	}
 }
 
+func TestSetupSignalHandling(t *testing.T) {
+	t.Parallel()
+
+	done := make(chan struct{}, 1)
+	closed := make(chan struct{})
+	var running ([]chan<- struct{})
+	running = append(running, closed)
+	setupSignalHandling(done, running)
+
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Signal(os.Interrupt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	<-done
+	<-closed
+}
+
 type AnyTime struct{}
 
 // Match satisfies sqlmock.Argument interface
